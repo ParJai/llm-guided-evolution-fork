@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH -A coc
+#SBATCH -q coe-ice
 #SBATCH --job-name=wine_seed
 #SBATCH -t 1:00:00
 #SBATCH --mem 8G
