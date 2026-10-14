@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -A coc
+#SBATCH -A math
 #SBATCH -q coe-ice
 #SBATCH --job-name=wine_seed
 #SBATCH -t 1:00:00
