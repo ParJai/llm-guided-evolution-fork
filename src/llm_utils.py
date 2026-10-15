@@ -8,6 +8,19 @@ import time
 import numpy as np
 import transformers
 from torch import bfloat16, float16
+
+# On nodes with no GPU, torch.accelerator.current_accelerator() raises instead of
+# returning None, which breaks `import transformers`. Return None in that case.
+import torch
+if hasattr(torch, "accelerator"):
+    _real_current_accelerator = torch.accelerator.current_accelerator
+    def _current_accelerator_or_none(*args, **kwargs):
+        try:
+            return _real_current_accelerator(*args, **kwargs)
+        except RuntimeError:
+            return None
+    torch.accelerator.current_accelerator = _current_accelerator_or_none
+
 from utils.privit import *
 from cfg.constants import *
 from utils.print_utils import *
