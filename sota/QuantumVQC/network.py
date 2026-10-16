@@ -50,7 +50,7 @@ N_CLASSES = 3
 READOUT = [0, 1]          # two readout qubits represents the three classes
 TWO_QUBIT_COST = 5.0      # two-qubit error rates are ~an order of magnitude worse
 MAX_GATE_COST = 500.0     # cost ceiling; runaway circuits are not interesting
-
+N_LAYERS = 2              # default depth; the circuit-assembly block can override it
 
 def load_data():
     """Fixed 60/20/20 split, shared by every individual. Scalers fit on TRAIN ONLY.
