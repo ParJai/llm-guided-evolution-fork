@@ -94,6 +94,7 @@ def get_critique(prompt, llm_model, top_p, max_words):
     if prompt in text:                      # defensive: some servers echo the prompt
         text = text.split(prompt)[-1]
     text = text.replace("```", "").strip()
+    text = re.split(r"\bpython\b|#", text, maxsplit=1, flags=re.I)[0].strip()
     words = text.split()
     if len(words) > max_words:
         text = " ".join(words[:max_words])
