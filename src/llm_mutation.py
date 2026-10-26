@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import ast
 import json
 import time
 import glob
@@ -106,6 +107,42 @@ def write_record(output_filename, record):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(record, f, indent=1)
 
+def sanitize_block(code_from_llm, original_block, other_blocks_text):
+    """Keep only what belongs to this evolvable block; drop whole-script scaffolding."""
+    try:
+        new_tree = ast.parse(code_from_llm)
+        old_tree = ast.parse(original_block)
+    except SyntaxError:
+        return code_from_llm, []
+    own_defs = {n.name for n in old_tree.body if isinstance(n, ast.FunctionDef)}
+    own_vars = {t.id for n in old_tree.body if isinstance(n, ast.Assign)
+                for t in n.targets if isinstance(t, ast.Name)}
+    elsewhere = set(re.findall(r"^\s*def\s+(\w+)", other_blocks_text, re.M)) - own_defs
+    kept, dropped = [], []
+    for node in new_tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            keep = True
+        elif isinstance(node, ast.FunctionDef):
+            keep = node.name not in elsewhere
+        elif isinstance(node, ast.Assign):
+            names = {t.id for t in node.targets if isinstance(t, ast.Name)}
+            keep = bool(names) and names <= own_vars
+        else:
+            keep = False
+        if keep:
+            kept.append(ast.get_source_segment(code_from_llm, node))
+        else:
+            dropped.append(getattr(node, "name", type(node).__name__))
+    return "\n\n".join(kept), dropped
+
+
+def same_code(a, b):
+    try:
+        body = lambda s: [ast.dump(n) for n in ast.parse(s).body
+                          if not isinstance(n, (ast.Import, ast.ImportFrom))]
+        return body(a) == body(b)
+    except SyntaxError:
+        return False
 
 def augment_network(input_filename='network.py', output_filename='network_x.py', template_txt=None,
                     top_p=0.15, llm_model=LLM_DEEPSEEK, temperature=0.1, apply_quality_control=False):
@@ -156,15 +193,24 @@ def augment_network(input_filename='network.py', output_filename='network_x.py',
 
     code_from_llm = generate_augmented_code(txt2llm, augment_idx-1, apply_quality_control,
                                             top_p, llm_model, temperature)
-
+    
     outcome = "ok"
     if not code_from_llm or code_from_llm == "ERROR":
         outcome = "no_code"
     else:
-        valid_code, invalid_reason = validate_generated_chunk(code_from_llm)
-        if not valid_code:
-            outcome = f"rejected: {invalid_reason}"
+        others = "\n".join(parts[:augment_idx] + parts[augment_idx + 1:])
+        code_from_llm, dropped = sanitize_block(code_from_llm, code2llm, others)
+        record["dropped"] = dropped
+        if not code_from_llm.strip():
+            outcome = "rejected: no usable code for this block"
+        else:
+            valid_code, invalid_reason = validate_generated_chunk(code_from_llm)
+            if not valid_code:
+                outcome = f"rejected: {invalid_reason}"
+            elif same_code(code_from_llm, code2llm):
+                outcome = "rejected: unchanged from parent"
     record["outcome"] = outcome
+    
     write_record(output_filename, record)
     if outcome != "ok":
         # A traceback makes the orchestrator treat this mutation as failed and keep the parent.
